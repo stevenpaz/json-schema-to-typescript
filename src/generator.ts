@@ -73,8 +73,8 @@ function declareNamedInterfaces(ast: AST, options: Options, rootASTName: string,
     case 'INTERFACE':
       type = [
         hasStandaloneName(ast) &&
-          (ast.standaloneName === rootASTName || options.declareExternallyReferenced) &&
-          generateStandaloneInterface(ast, options),
+        (ast.standaloneName === rootASTName || options.declareExternallyReferenced) &&
+        generateStandaloneInterface(ast, options),
         getSuperTypesAndParams(ast)
           .map(ast => declareNamedInterfaces(ast, options, rootASTName, processed))
           .filter(Boolean)
@@ -285,33 +285,45 @@ function generateRawType(ast: AST, options: Options): string {
  * Generate a Union or Intersection
  */
 function generateSetOperation(ast: TIntersection | TUnion, options: Options): string {
-  const members = (ast as TUnion).params.map(_ => generateType(_, options))
+  // generate array of types, no duplicates
+  const members = (ast as TUnion).params
+    .map(_ => generateType(_, options))
+    .filter((value, index, self) => self.indexOf(value) === index) // unique
   const separator = ast.type === 'UNION' ? '|' : '&'
   return members.length === 1 ? members[0] : '(' + members.join(' ' + separator + ' ') + ')'
 }
 
 function generateInterface(ast: TInterface, options: Options): string {
-  return (
-    `{` +
-    '\n' +
-    ast.params
-      .filter(_ => !_.isPatternProperty && !_.isUnreachableDefinition)
-      .map(
-        ({isRequired, keyName, ast}) =>
-          [isRequired, keyName, ast, generateType(ast, options)] as [boolean, string, AST, string]
-      )
-      .map(
-        ([isRequired, keyName, ast, type]) =>
-          (hasComment(ast) && !ast.standaloneName ? generateComment(ast.comment) + '\n' : '') +
-          escapeKeyName(keyName) +
-          (isRequired ? '' : '?') +
-          ': ' +
-          (hasStandaloneName(ast) ? toSafeString(type) : type)
-      )
-      .join('\n') +
-    '\n' +
-    '}'
-  )
+  // If present, generate a single index signature from all patternProperties.
+  let patternProperties = ''
+  if (ast.params.some(_ => _.isPatternProperty)) {
+    // Add the string key and union the types.
+    patternProperties =
+      '[k: string]:' +
+      ast.params
+        .filter(_ => _.isPatternProperty)
+        .map(({ ast }) => [ast, generateType(ast, options)] as [AST, string])
+        .map(([ast, type]) => (hasStandaloneName(ast) ? toSafeString(type) : type))
+        .join('|') + '\n'
+  }
+
+  let properties = ast.params
+    .filter(_ => !_.isPatternProperty && !_.isUnreachableDefinition)
+    .map(
+      ({ isRequired, keyName, ast }) =>
+        [isRequired, keyName, ast, generateType(ast, options)] as
+        [boolean, string, AST, string])
+    .map(
+      ([isRequired, keyName, ast, type]) =>
+        (hasComment(ast) && !ast.standaloneName ? generateComment(ast.comment) + '\n' : '') +
+        escapeKeyName(keyName) +
+        (isRequired ? '' : '?') +
+        ': ' +
+        (hasStandaloneName(ast) ? toSafeString(type) : type)
+        )
+    .join('\n')
+
+  return '{' + '\n' + patternProperties + properties + '}'
 }
 
 function generateComment(comment: string): string {
