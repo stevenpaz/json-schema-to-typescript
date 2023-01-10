@@ -1,5 +1,5 @@
-import {memoize, omit} from 'lodash'
-import {DEFAULT_OPTIONS, Options} from './index'
+import { memoize, omit } from 'lodash'
+import { DEFAULT_OPTIONS, Options } from './index'
 import {
   AST,
   ASTWithStandaloneName,
@@ -14,7 +14,7 @@ import {
   TUnion,
   T_UNKNOWN
 } from './types/AST'
-import {log, toSafeString} from './utils'
+import { log, toSafeString } from './utils'
 
 export function generate(ast: AST, options = DEFAULT_OPTIONS): string {
   return (
@@ -295,15 +295,25 @@ function generateSetOperation(ast: TIntersection | TUnion, options: Options): st
 
 function generateInterface(ast: TInterface, options: Options): string {
   // If present, generate a single index signature from all patternProperties.
-  let patternProperties = ''
+  let patternProperty = ''
   if (ast.params.some(_ => _.isPatternProperty)) {
+    const pp = ast.params
+      .filter(_ => _.isPatternProperty)
+      .map(({ ast }) => [ast, generateType(ast, options)] as [AST, string])
+      
+    // Join all of the comments as a single comment.
+    const comment = pp.filter(
+      ([ast, _]) => hasComment(ast)
+    ).map(
+      ([ast, _]) => ast.comment
+    ).join('\n')
+
     // Add the string key and union the types.
-    patternProperties =
-      '[k: string]:' +
-      ast.params
-        .filter(_ => _.isPatternProperty)
-        .map(({ ast }) => [ast, generateType(ast, options)] as [AST, string])
-        .map(([ast, type]) => (hasStandaloneName(ast) ? toSafeString(type) : type))
+    patternProperty =
+      (comment ? generateComment(comment) : '') +
+      '\n' +
+      '[k: string]:' + 
+      pp.map(([ast, type]) =>  (hasStandaloneName(ast) ? toSafeString(type) : type))
         .join('|') + '\n'
   }
 
@@ -320,10 +330,10 @@ function generateInterface(ast: TInterface, options: Options): string {
         (isRequired ? '' : '?') +
         ': ' +
         (hasStandaloneName(ast) ? toSafeString(type) : type)
-        )
+    )
     .join('\n')
 
-  return '{' + '\n' + patternProperties + properties + '}'
+  return '{' + '\n' + patternProperty + properties + '}'
 }
 
 function generateComment(comment: string): string {
@@ -337,7 +347,7 @@ function generateStandaloneEnum(ast: TEnum, options: Options): string {
     (options.enableConstEnums ? 'const ' : '') +
     `enum ${toSafeString(ast.standaloneName)} {` +
     '\n' +
-    ast.params.map(({ast, keyName}) => keyName + ' = ' + generateType(ast, options)).join(',\n') +
+    ast.params.map(({ ast, keyName }) => keyName + ' = ' + generateType(ast, options)).join(',\n') +
     '\n' +
     '}'
   )
